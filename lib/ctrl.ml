@@ -169,91 +169,152 @@ let callcc_ex1 n = callcc_fac Callcc.callcc n
    multiple times. The following fails for [n] > 1. *)
 let call1cc_ex1 n = callcc_fac Callcc.call1cc n
 
-(* Felleisen's C & F *)
-module CF: sig
-  type c
-  type f
-  type ('a, 'o) cont
+module type PROMPT = sig
+  type 'a t
+  type ('a, 'b) continuation
 
-  val throw : ('a, c) cont -> 'a -> 'b
-  val resume : ('a, f) cont -> 'a -> 'a
+  val make : unit -> 'a t
+  val run  : 'a t -> (unit -> 'a) -> 'a
+  val reify : 'b t -> (('a, 'b) continuation -> 'b) -> 'a
+  val resume : ('a, 'b) continuation -> 'a -> 'b
+  val abort : 'a t -> (unit -> 'a) -> 'b
+end
 
-  val c : (('a, c) cont -> 'a) -> 'a
-  val f : (('a, f) cont -> 'a) -> 'a
-  val prompt : (unit -> 'a) -> 'a
-end = struct
-  type c
-  type f
-  type ('a, 'o) cont = Ccont : { k: 'b. 'a -> 'b } -> ('a, c) cont
-                     | Fcont : { k: 'a -> 'a } -> ('a, f) cont
+module Prompt : PROMPT = struct
+  type ('a, 'b) continuation = ('a, 'b) Multicont.Deep.resumption
+  type 'a t = { reify: 'b. (('b, 'a) continuation -> 'a) -> 'b
+              ; abort: 'b. (unit -> 'a) -> 'b
+              ; run: (unit -> 'a) -> 'a }
 
-  type _ Effect.t += C : (('a, c) cont -> 'a) -> 'a Effect.t
-                   | F : (('a, f) cont -> 'a) -> 'a Effect.t
-
-
-  let throw : ('a, c) cont -> 'a -> 'b
-    = fun (Ccont { k }) x -> k x
-
-  let resume : ('a, f) cont -> 'a -> 'a
-    = fun (Fcont { k }) x -> k x
-
-  let c : (('a, c) cont -> 'a) -> 'a
-    = fun f -> Effect.perform (C f)
-
-  let f : (('a, f) cont -> 'a) -> 'a
-    = fun f -> Effect.perform (F f)
-
-  let rec hprompt : unit -> ('a, 'a) Effect.Deep.handler
+  let make (type a) : unit -> a t
     = fun () ->
-    let open Effect.Deep in
-    { retc = (fun ans -> ans)
-    ; exnc = raise
-    ; effc = (fun (type a) (eff : a Effect.t) ->
-      match eff with
-      | C f ->
-         Some (fun (k : (a, _) continuation) ->
-             let open Multicont.Deep in
-             let r = promote k in
-             let exception Throw of a in
-             let cont : (a, c) cont =
-               Ccont { k = (fun x -> raise (Throw x)) }
-             in
-             let rec handle_throw
-               = fun f ->
-               try prompt f with
-               | Throw ans -> handle_throw (fun () -> resume r ans)
-             in
-             handle_throw (fun () -> Obj.magic (f cont))) (* TODO(dhil): I have to think about whether it is possible to get rid of the coercion here... *)
-      | F f ->
-         Some (fun (k : (a, _) continuation) ->
-             let open Multicont.Deep in
-             let r = promote k in
-             let cont : (a, f) cont =
-               Fcont { k = (fun x -> Obj.magic (resume r x)) } (* TODO(dhil): fix this. *)
-             in
-             prompt (fun () -> Obj.magic (f cont))) (* TODO(dhil): fix this. *)
-      | _ -> None) }
-  and prompt : (unit -> 'a) -> 'a
-    = fun f -> Effect.Deep.match_with f () (hprompt ())
+    let module P = struct
+        type _ Effect.t += Reify : (('b, a) continuation -> a) -> 'b Effect.t
+        exception Abort of (unit -> a)
+      end
+    in
+    let reify f = Effect.perform (P.Reify f) in
+    let rec hprompt =
+      let open Effect.Deep in
+      { retc = (fun x -> x)
+      ; exnc = raise
+      ; effc = (fun (type b) (eff : b Effect.t) ->
+        match eff with
+        | P.Reify f ->
+           Some
+             (fun (k : (b, a) continuation) ->
+               let r = Multicont.Deep.promote k in
+               try f r with
+               | P.Abort f -> f ())
+        | _ -> None) }
+    in
+    let run f =
+      Effect.Deep.match_with f () hprompt
+    in
+    let abort f = raise (P.Abort f) in
+    { reify; run; abort }
+
+  let run  : 'a t -> (unit -> 'a) -> 'a
+    = fun { run; _ } f -> run f
+
+  let reify : 'b t -> (('a, 'b) continuation -> 'b) -> 'a
+    = fun { reify; _ } f -> reify f
+
+  let resume : ('a, 'b) continuation -> 'a -> 'b
+    = fun k x -> Multicont.Deep.resume k x
+
+  let abort : 'a t -> (unit -> 'a) -> 'b
+    = fun { abort; _ } f -> abort f
+end
+
+(* Felleisen's C & F *)
+module C: sig
+  type ('a, 'b) cont
+
+  val resume : 'b Prompt.t -> ('a, 'b) cont -> 'a -> 'c
+  val c : 'a Prompt.t -> (('a, 'a) cont -> 'a) -> 'a
+  (* val prompt : 'a Prompt.t -> (unit -> 'a) -> 'a *)
+end = struct
+  type ('a, 'b) cont = ('a, 'b) Prompt.continuation
+
+
+  let resume p k x = Prompt.abort p (fun () -> Prompt.resume k x)
+  let c p f = Prompt.reify p f
+  (* let prompt p f = Prompt.run p f *)
+
+
+  (* type 'a cont = { k: 'b. 'a -> 'b } *)
+  (* type 'a prompt = { p: 'a. (unit -> 'a) -> 'a } *)
+
+  (* type _ Effect.t += C : ('a cont -> 'a) -> 'a Effect.t *)
+
+
+  (* let resume : 'a cont -> 'a -> 'b *)
+  (*   = fun { k } x -> k x *)
+
+  (* let c : ('a cont -> 'a) -> 'a *)
+  (*   = fun f -> Effect.perform (C f) *)
+
+  (* let rec hprompt : unit -> ('a, 'a) Effect.Deep.handler *)
+  (*   = fun () -> *)
+  (*   let open Effect.Deep in *)
+  (*   { retc = (fun ans -> ans) *)
+  (*   ; exnc = raise *)
+  (*   ; effc = (fun (type a) (eff : a Effect.t) -> *)
+  (*     match eff with *)
+  (*     | C f -> *)
+  (*        Some (fun (k : (a, _) continuation) -> *)
+  (*            let open Multicont.Deep in *)
+  (*            let r = promote k in *)
+  (*            let exception Throw of a in *)
+  (*            let cont : a cont = *)
+  (*              { k = (fun x -> raise (Throw x)) } *)
+  (*            in *)
+  (*            let rec handle_throw : (unit -> 'a) -> 'a *)
+  (*              = fun f -> *)
+  (*              try prompt f with *)
+  (*              | Throw ans -> handle_throw (fun () -> resume r ans) *)
+  (*            in *)
+  (*            handle_throw (fun () -> Obj.magic @@ f cont)) (\* TODO(dhil): I have to think about whether it is possible to get rid of the coercion here... *\) *)
+  (*     | _ -> None) } *)
+  (* and prompt : (unit -> 'a) -> 'a *)
+  (*   = fun f -> Effect.Deep.match_with f () (hprompt ()) *)
 end
 
 let c_ex0 () =
-  let open CF in
-  prompt (fun () ->
-      40 + c (fun k -> 2))
+  let open C in
+  let p = Prompt.make () in
+  Prompt.run p (fun () ->
+      40 + c p (fun k -> 2))
 
 let c_ex1 () =
-  let open CF in
-  prompt (fun () ->
-      40 + c (fun k -> throw k 2 + throw k 2))
+  let open C in
+  let p = Prompt.make () in
+  Prompt.run p (fun () ->
+      40 + c p (fun k -> resume p k 2 + resume p k 2))
+
+module F: sig
+  type 'a cont
+
+  val resume : 'a cont -> 'a -> 'a
+  val f : ('a cont -> 'a) -> 'a
+  val prompt : (unit -> 'a) -> 'a
+end = struct
+  type 'a cont
+
+  let resume k x = failwith "TODO"
+  let f g = failwith "TODO"
+
+  let prompt f = failwith "TODO"
+end
 
 let f_ex0 () =
-  let open CF in
+  let open F in
   prompt (fun () ->
       40 + f (fun k -> 2))
 
 let f_ex1 () =
-  let open CF in
+  let open F in
   prompt (fun () ->
       40 + f (fun k -> resume k 2 + resume k 2))
 
