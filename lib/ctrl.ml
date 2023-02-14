@@ -299,37 +299,39 @@ let f_ex2' () =
 
 
 (* Danvy and Filinski's shift/reset *)
-(* module Shift: sig *)
-(*   type ('a, 'b) continuation *)
+module Shift: sig
+  type ('a, 'b) continuation
 
-(*   val resume : ('a, 'b) continuation -> 'a -> 'b *)
-(*   val shift : 'a Prompt.t -> (('b, 'a) continuation -> 'a) -> 'b *)
-(*   val shift0 : 'a Prompt.t -> (('b, 'a) continuation -> 'a) -> 'b *)
-(*   val reset : ('a Prompt.t -> 'a) -> 'a *)
-(* end = struct *)
-(*   type ('a, 'b) continuation = { k: 'b. ('a, 'b) Prompt.continuation; p : 'a Prompt.t } *)
+  val resume : ('a, 'b) continuation -> 'a -> 'b
+  val shift : 'a Prompt.t -> (('b, 'a) continuation -> 'a) -> 'b
+  val shift0 : 'a Prompt.t -> (('b, 'a) continuation -> 'a) -> 'b
+  val reset : ('a Prompt.t -> 'a) -> 'a
+end = struct
+  type ('a, 'b) continuation = 'a -> 'b
 
-(*   let resume { k; p } x = Prompt.resume k x *)
-(*   let shift0 p f = *)
-(*     Prompt.reify p (fun k -> f { p; k }) *)
-(*   let shift f = failwith "TODO" *)
+  let resume k x = k x
+  let shift0 p f =
+    Prompt.reify p (fun k -> f (fun x -> Prompt.resume k x))
 
-(*   let reset f = *)
-(*     let p = Prompt.make () in *)
-(*     Prompt.run p (fun () -> f p) *)
-(* end *)
+  let reset f =
+    let p = Prompt.make () in
+    Prompt.run p (fun () -> f p)
 
-(* let shift_ex0 () = *)
-(*   let open Shift in *)
-(*   1 + reset (fun p -> *)
-(*           2 + (shift p (fun k -> 3 + resume k 0)) + (shift p (fun _ -> 4))) *)
+  let shift p f
+    = Prompt.reify p (fun k -> Prompt.run p (fun () -> f (fun x -> Prompt.run p (fun () -> Prompt.resume k x))))
+end
 
-(* let shift_ex1 () = *)
-(*   let open Shift in *)
-(*   2 * reset (fun p -> *)
-(*           shift p (fun k -> resume k (resume k 2))) *)
+let shift_ex0 () =
+  let open Shift in
+  1 + reset (fun p ->
+          2 + (shift p (fun k -> 3 + resume k 0)) + (shift p (fun _ -> 4)))
 
-(* let control_ex0 () = *)
-(*   let open Control in *)
-(*   1 + prompt (fun p -> *)
-(*       2 + (control p (fun k -> 3 + resume k 0)) + (control p (fun _ -> 4))) *)
+let shift_ex1 () =
+  let open Shift in
+  2 * reset (fun p ->
+          shift p (fun k -> resume k (resume k 2)))
+
+let control_ex0 () =
+  let open Control in
+  1 + prompt (fun p ->
+      2 + (control p (fun k -> 3 + resume k 0)) + (control p (fun _ -> 4)))
