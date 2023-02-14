@@ -227,58 +227,17 @@ module Prompt : PROMPT = struct
     = fun { abort; _ } f -> abort f
 end
 
-(* Felleisen's C & F *)
+(* Felleisen's C *)
 module C: sig
-  type ('a, 'b) cont
+  type ('a, 'b) continuation
 
-  val resume : 'b Prompt.t -> ('a, 'b) cont -> 'a -> 'c
-  val c : 'a Prompt.t -> (('a, 'a) cont -> 'a) -> 'a
-  (* val prompt : 'a Prompt.t -> (unit -> 'a) -> 'a *)
+  val resume : 'b Prompt.t -> ('a, 'b) continuation -> 'a -> 'c
+  val c : 'a Prompt.t -> (('a, 'a) continuation -> 'a) -> 'a
 end = struct
-  type ('a, 'b) cont = ('a, 'b) Prompt.continuation
-
+  type ('a, 'b) continuation = ('a, 'b) Prompt.continuation
 
   let resume p k x = Prompt.abort p (fun () -> Prompt.resume k x)
   let c p f = Prompt.reify p f
-  (* let prompt p f = Prompt.run p f *)
-
-
-  (* type 'a cont = { k: 'b. 'a -> 'b } *)
-  (* type 'a prompt = { p: 'a. (unit -> 'a) -> 'a } *)
-
-  (* type _ Effect.t += C : ('a cont -> 'a) -> 'a Effect.t *)
-
-
-  (* let resume : 'a cont -> 'a -> 'b *)
-  (*   = fun { k } x -> k x *)
-
-  (* let c : ('a cont -> 'a) -> 'a *)
-  (*   = fun f -> Effect.perform (C f) *)
-
-  (* let rec hprompt : unit -> ('a, 'a) Effect.Deep.handler *)
-  (*   = fun () -> *)
-  (*   let open Effect.Deep in *)
-  (*   { retc = (fun ans -> ans) *)
-  (*   ; exnc = raise *)
-  (*   ; effc = (fun (type a) (eff : a Effect.t) -> *)
-  (*     match eff with *)
-  (*     | C f -> *)
-  (*        Some (fun (k : (a, _) continuation) -> *)
-  (*            let open Multicont.Deep in *)
-  (*            let r = promote k in *)
-  (*            let exception Throw of a in *)
-  (*            let cont : a cont = *)
-  (*              { k = (fun x -> raise (Throw x)) } *)
-  (*            in *)
-  (*            let rec handle_throw : (unit -> 'a) -> 'a *)
-  (*              = fun f -> *)
-  (*              try prompt f with *)
-  (*              | Throw ans -> handle_throw (fun () -> resume r ans) *)
-  (*            in *)
-  (*            handle_throw (fun () -> Obj.magic @@ f cont)) (\* TODO(dhil): I have to think about whether it is possible to get rid of the coercion here... *\) *)
-  (*     | _ -> None) } *)
-  (* and prompt : (unit -> 'a) -> 'a *)
-  (*   = fun f -> Effect.Deep.match_with f () (hprompt ()) *)
 end
 
 let c_ex0 () =
@@ -293,28 +252,84 @@ let c_ex1 () =
   Prompt.run p (fun () ->
       40 + c p (fun k -> resume p k 2 + resume p k 2))
 
-module F: sig
-  type 'a cont
+(* Felleisen's Prompt/Control (or F) *)
+module Control: sig
+  type ('a, 'b) continuation
 
-  val resume : 'a cont -> 'a -> 'a
-  val f : ('a cont -> 'a) -> 'a
-  val prompt : (unit -> 'a) -> 'a
+  val resume : ('a, 'b) continuation -> 'a -> 'b
+  val control : 'a Prompt.t -> (('b, 'a) continuation -> 'a) -> 'b
+  val control0 : 'a Prompt.t -> (('b, 'a) continuation -> 'a) -> 'b
+  val prompt : ('a Prompt.t -> 'a) -> 'a
 end = struct
-  type 'a cont
+  type ('a, 'b) continuation = ('a, 'b) Prompt.continuation
 
-  let resume k x = failwith "TODO"
-  let f g = failwith "TODO"
-
-  let prompt f = failwith "TODO"
+  let resume k x = Prompt.resume k x
+  let control p f = Prompt.reify p (fun k -> Prompt.run p (fun () -> f k))
+  let control0 p f = Prompt.reify p f
+  let prompt f =
+    let p = Prompt.make () in
+    Prompt.run p (fun () -> f p)
 end
 
 let f_ex0 () =
-  let open F in
-  prompt (fun () ->
-      40 + f (fun k -> 2))
+  let open Control in
+  let p = Prompt.make () in
+  Prompt.run p (fun () ->
+      40 + control p (fun k -> 2))
 
 let f_ex1 () =
-  let open F in
-  prompt (fun () ->
-      40 + f (fun k -> resume k 2 + resume k 2))
+  let open Control in
+  let p = Prompt.make () in
+  Prompt.run p (fun () ->
+      40 + control p (fun k -> resume k 2 + resume k 2))
 
+let f_ex2 () =
+  let open Control in
+  let p = Prompt.make () in
+  Prompt.run p (fun () ->
+      40 + control p
+             (fun k -> resume k 2 + (control p (fun k -> resume k 2))))
+
+let f_ex2' () =
+  let open Control in
+  let p = Prompt.make () in
+  Prompt.run p (fun () ->
+      40 + control0 p
+             (fun k -> resume k 2 + (control0 p (fun k -> resume k 2))))
+
+
+(* Danvy and Filinski's shift/reset *)
+(* module Shift: sig *)
+(*   type ('a, 'b) continuation *)
+
+(*   val resume : ('a, 'b) continuation -> 'a -> 'b *)
+(*   val shift : 'a Prompt.t -> (('b, 'a) continuation -> 'a) -> 'b *)
+(*   val shift0 : 'a Prompt.t -> (('b, 'a) continuation -> 'a) -> 'b *)
+(*   val reset : ('a Prompt.t -> 'a) -> 'a *)
+(* end = struct *)
+(*   type ('a, 'b) continuation = { k: 'b. ('a, 'b) Prompt.continuation; p : 'a Prompt.t } *)
+
+(*   let resume { k; p } x = Prompt.resume k x *)
+(*   let shift0 p f = *)
+(*     Prompt.reify p (fun k -> f { p; k }) *)
+(*   let shift f = failwith "TODO" *)
+
+(*   let reset f = *)
+(*     let p = Prompt.make () in *)
+(*     Prompt.run p (fun () -> f p) *)
+(* end *)
+
+(* let shift_ex0 () = *)
+(*   let open Shift in *)
+(*   1 + reset (fun p -> *)
+(*           2 + (shift p (fun k -> 3 + resume k 0)) + (shift p (fun _ -> 4))) *)
+
+(* let shift_ex1 () = *)
+(*   let open Shift in *)
+(*   2 * reset (fun p -> *)
+(*           shift p (fun k -> resume k (resume k 2))) *)
+
+(* let control_ex0 () = *)
+(*   let open Control in *)
+(*   1 + prompt (fun p -> *)
+(*       2 + (control p (fun k -> 3 + resume k 0)) + (control p (fun _ -> 4))) *)
