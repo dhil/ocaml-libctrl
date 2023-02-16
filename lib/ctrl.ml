@@ -64,74 +64,73 @@ end = struct
   let call1cc : ('a cont -> 'a) -> 'a
     = fun f -> Effect.perform (Call1cc f)
 
-  (* [hprompt ()] generates a fresh prompt for delimiting invocations
+  (* [hprompt] generates a fresh prompt for delimiting invocations
      of [callcc]. *)
-  let rec hprompt : unit -> ('a, 'a) Effect.Deep.handler
-    = fun () ->
-    let open Effect.Deep in
-    { retc = (fun ans -> ans)
-    ; exnc = raise
-    ; effc = (fun (type a) (eff : a Effect.t) ->
-      match eff with
-      | Callcc f ->
-         Some (fun (k : (a, _) continuation) ->
-             let open Multicont.Deep in
-             let r = promote k in
-             (* We model the abortive elimination of continuations
-                using exceptions.
+  let rec hprompt : ('a, 'a) Effect.Deep.handler
+    = let open Effect.Deep in
+      { retc = (fun ans -> ans)
+      ; exnc = raise
+      ; effc = (fun (type a) (eff : a Effect.t) ->
+        match eff with
+        | Callcc f ->
+           Some (fun (k : (a, _) continuation) ->
+               let open Multicont.Deep in
+               let r = promote k in
+               (* We model the abortive elimination of continuations
+                  using exceptions.
 
-                We use generative exceptions to make sure that
-                controlled gets passed back to *this* particular
-                prompt when the continuation has been invoked. Well,
-                we are only guaranteed to return to this prompt as
-                long as [Throw] doesn't pass through a non-forwarding
-                catch-all handler. *)
-             let exception Throw of a in
-             let cont : a cont
-               = { k = fun x -> raise (Throw x) }
-             in
-             (* The effect handler-captured continuation [r] is
-                captured abortively, thus to implement the semantics
-                of [callcc] we must invoke it both when [callcc]
-                returns successfully and when it returns via an
-                invocation of [throw].
+                  We use generative exceptions to make sure that
+                  controlled gets passed back to *this* particular
+                  prompt when the continuation has been invoked. Well,
+                  we are only guaranteed to return to this prompt as
+                  long as [Throw] doesn't pass through a non-forwarding
+                  catch-all handler. *)
+               let exception Throw of a in
+               let cont : a cont
+                 = { k = fun x -> raise (Throw x) }
+               in
+               (* The effect handler-captured continuation [r] is
+                  captured abortively, thus to implement the semantics
+                  of [callcc] we must invoke it both when [callcc]
+                  returns successfully and when it returns via an
+                  invocation of [throw].
 
-                Note: we must reinstate [handle_throw] in the
-                exception clause in order to handle any residual
-                invocations of [throw] in the continuation.  *)
-             let rec handle_throw f =
-               try
-                 (* we install a fresh prompt here to handle residual
-                    applications of [callcc] in the continuation.
+                  Note: we must reinstate [handle_throw] in the
+                  exception clause in order to handle any residual
+                  invocations of [throw] in the continuation.  *)
+               let rec handle_throw f =
+                 try
+                   (* we install a fresh prompt here to handle residual
+                      applications of [callcc] in the continuation.
 
-                    Note things are set up such that [Throw] will
-                    propagate outside the prompt. *)
-                 prompt f
-             with
-             | Throw ans -> handle_throw (fun () -> resume r ans)
-             in
-             handle_throw (fun () ->
-                 let ans = f cont in
-                 resume r ans))
-      | Call1cc f ->
-         Some (fun (k : (a, _) continuation) ->
-             let exception Throw of a in
-             let cont : a cont
-               = let used = ref false in
-                 { k = (fun x ->
-                     if !used
-                     then raise Effect.Continuation_already_resumed (* TODO(dhil): Create a special purpose exception for callcc? *)
-                     else (used := true; raise (Throw x))) }
-             in
-             try
-               prompt (fun () ->
+                      Note things are set up such that [Throw] will
+                      propagate outside the prompt. *)
+                   prompt f
+                 with
+                 | Throw ans -> handle_throw (fun () -> resume r ans)
+               in
+               handle_throw (fun () ->
                    let ans = f cont in
-                   continue k ans)
-             with
-             | Throw ans -> continue k ans)
-      | _ -> None) }
+                   resume r ans))
+        | Call1cc f ->
+           Some (fun (k : (a, _) continuation) ->
+               let exception Throw of a in
+               let cont : a cont
+                 = let used = ref false in
+                   { k = (fun x ->
+                       if !used
+                       then raise Effect.Continuation_already_resumed (* TODO(dhil): Create a special purpose exception for callcc? *)
+                       else (used := true; raise (Throw x))) }
+               in
+               try
+                 prompt (fun () ->
+                     let ans = f cont in
+                     continue k ans)
+               with
+               | Throw ans -> continue k ans)
+        | _ -> None) }
   and prompt : (unit -> 'a) -> 'a
-    = fun f -> Effect.Deep.match_with f () (hprompt ())
+    = fun f -> Effect.Deep.match_with f () hprompt
 end
 
 let callcc_ex0 () =
@@ -337,3 +336,73 @@ let control_ex0 () =
   let open Control in
   1 + prompt (fun p ->
       2 + (control p (fun k -> 3 + resume k 0)) + (control p (fun _ -> 4)))
+
+(* Longley's catch-with-continue *)
+module Catchcont: sig
+  type ('a, 'b, 'c, 'd) result =
+    | Inl of { result: 'c; more: ('a -> 'b) -> 'd }
+    | Inr of { arg: 'a; resume: ('b -> ('a -> 'b) -> ('c * 'd)) }
+
+  val catchcont : (('a -> 'b) -> 'c * 'd) -> ('a, 'b, 'c, 'd) result
+end = struct
+  type ('a, 'b, 'c, 'd) result =
+    | Inl of { result: 'c; more: ('a -> 'b) -> 'd }
+    | Inr of { arg: 'a; resume: ('b -> ('a -> 'b) -> ('c * 'd)) }
+
+  let catchcont f =
+    let g_store = ref None in
+    let return_addr = ref None in
+    Callcc.callcc (fun k ->
+        let (ground, rest) as answer =
+          f (fun i ->
+              match !g_store with
+              | Some g -> g i
+              | None ->
+                 Callcc.callcc (fun l ->
+                     Callcc.throw k (Inr { arg = i; resume = (fun j g ->
+                                              Callcc.callcc (fun m ->
+                                                  (g_store := Some g;
+                                                   return_addr := Some m;
+                                                   Callcc.throw l j))) })))
+        in
+        match !return_addr with
+        | None -> Inl { result = ground; more = (fun g -> g_store := Some g; rest) }
+        | Some m -> Callcc.throw m answer)
+
+  (* type ('a, 'b) continuation = ('a, 'b) Multicont.Deep.resumption *)
+  (* type ('a, 'b) op = 'a -> 'b *)
+  (* type ('a, 'b, 'c) result = *)
+  (*   | Inl of 'c *)
+  (*   | Inr of 'a * ('b -> ('a, 'b) op -> 'c) *)
+
+
+  (* let rec hcatchcont (type a) = *)
+  (*   let module M = struct *)
+  (*       type _ Effect.t += Reify : a -> 'b Effect.t *)
+  (*     end *)
+  (*   in *)
+  (*   let open Effect.Deep in *)
+  (*   { retc = (fun x -> Inl x) *)
+  (*   ; exnc = raise *)
+  (*   ; effc = (fun (type a) (eff : a Effect.t) -> *)
+  (*     match eff with *)
+  (*     | M.Reify x -> *)
+  (*        Some (fun (k : (a, _) continuation) -> *)
+  (*            let r = Multicont.Deep.promote k in *)
+  (*            Inr (x, *)
+  (*                 (fun x _ -> *)
+  (*                   Multicont.Deep.resume r x))) *)
+  (*     | _ -> None) } *)
+
+  (* let catchcont : (('a, 'b) op -> 'c) -> ('a, 'b, 'c) result *)
+  (*   = fun f -> failwith "TODO" *)
+
+  (* let catchcont f = *)
+  (*   let p = Prompt.make () in *)
+  (*   let (x, y) = Prompt.run p (fun () -> *)
+  (*                    f (fun x -> *)
+  (*                        Prompt.reify p (fun k -> *)
+  (*                            Inr (x, (fun x f -> Prompt.resume k x))))) *)
+  (*   in *)
+  (*   Inl (x, (fun _ -> y)) *)
+end
