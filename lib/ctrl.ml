@@ -307,24 +307,26 @@ module Shift: sig
   val shift0 : 'a Prompt.t -> (('b, 'a) continuation -> 'a) -> 'b
   val reset : ('a Prompt.t -> 'a) -> 'a
 end = struct
-  type ('a, 'b) continuation = 'a -> 'b
+  type ('a, 'b) continuation = ('a, 'b) Prompt.continuation
 
-  let resume k x = k x
+  let resume k x = Prompt.resume k x
   let shift0 p f =
-    Prompt.reify p (fun k -> f (fun x -> Prompt.resume k x))
+    Prompt.reify p (fun k -> f k)
 
   let reset f =
     let p = Prompt.make () in
     Prompt.run p (fun () -> f p)
 
   let shift p f
-    = Prompt.reify p (fun k -> Prompt.run p (fun () -> f (fun x -> Prompt.run p (fun () -> Prompt.resume k x))))
+    = shift0 p (fun k -> Prompt.run p (fun () -> f k))
 end
 
 let shift_ex0 () =
   let open Shift in
   1 + reset (fun p ->
-          2 + (shift p (fun k -> 3 + resume k 0)) + (shift p (fun _ -> 4)))
+          let a = shift p (fun k -> 3 + resume k 0) in
+          let b = shift p (fun _ -> 4) in
+          2 + a + b)
 
 let shift_ex1 () =
   let open Shift in
