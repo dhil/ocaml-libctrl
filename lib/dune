@@ -1,4 +1,4 @@
 (library
  (public_name libctrl)
- (name ctrl)
+ (name libctrl)
  (libraries multicont))
