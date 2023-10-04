@@ -17,7 +17,7 @@
 
 (package
  (name libctrl)
- (synopsis "A curated collection of first-class control operators")
+ (synopsis "Continuations, continuations, and more continuations")
  (description "A playground library for programming with first-class control")
  (depends (ocaml (>= : 5.0.0))
           dune)
