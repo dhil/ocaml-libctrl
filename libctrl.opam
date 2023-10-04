@@ -21,6 +21,8 @@ bug-reports: "https://github.com/dhil/ocaml-libctrl/issues"
 depends: [
   "ocaml" { >= "5.0.0"}
   "dune" {>= "3.10"}
+  "ounit2" {with-test}
+  "qcheck" {with-test}
   "odoc" {with-doc}
 ]
 build: [
