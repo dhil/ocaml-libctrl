@@ -1,13 +1,13 @@
 type 'a t =
-  { capture : 'b. (('b, 'a) Multicont.Deep.resumption -> 'a) -> 'b
-  ; resume : (unit -> 'a) -> 'a }
+  { capture_subcont : 'b. (('b, 'a) Multicont.Deep.resumption -> 'a) -> 'b
+  ; push_prompt : (unit -> 'a) -> 'a }
 
 module Subcontinuation = struct
   type 'a prompt = 'a t
   type ('a, 'b) t = ('a, 'b) Multicont.Deep.resumption
 
   let capture : 'b prompt -> (('a, 'b) t -> 'b) -> 'a
-    = fun { capture; _ } -> capture
+    = fun { capture_subcont; _ } -> capture_subcont
 
   let resume : ('a, 'b) t -> 'a -> 'b
     = fun r x -> Multicont.Deep.resume r x
@@ -19,8 +19,8 @@ let make (type a) : unit -> a t
       type _ Effect.t += Prompt : (('b, a) Subcontinuation.t -> a) -> 'b Effect.t
     end
   in
-  let capture f = Effect.perform (M.Prompt f) in
-  let resume f =
+  let capture_subcont f = Effect.perform (M.Prompt f) in
+  let push_prompt f =
     Effect.Deep.match_with f ()
       Effect.Deep.({ retc = (fun ans -> ans)
                    ; exnc = raise
@@ -31,6 +31,6 @@ let make (type a) : unit -> a t
                             f (Multicont.Deep.promote k))
                      | _ -> None) })
   in
-  { capture; resume }
+  { capture_subcont; push_prompt }
 
-let push { resume; _ } = resume
+let push { push_prompt; _ } = push_prompt
