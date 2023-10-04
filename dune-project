@@ -11,7 +11,7 @@
 
 (maintainers "Daniel Hillerström <daniel.hillerstrom@ed.ac.uk>")
 
-(license LICENSE)
+(license MIT)
 
 ;(documentation https://url/to/documentation)
 
