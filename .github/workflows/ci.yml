@@ -10,7 +10,7 @@ on:
     - cron: 0 1 * * MON
 
 jobs:
-  examples:
+  ci:
     strategy:
       fail-fast: false
       matrix:
