@@ -1,0 +1,49 @@
+name: Libctrl build, install, and run testsuite
+
+on:
+  pull_request:
+    branches: main
+  push:
+    branches: [main]
+  schedule:
+    # Prime the caches every Monday
+    - cron: 0 1 * * MON
+
+jobs:
+  examples:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+        ocaml-compiler:
+          - 5.1.0
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Use OCaml ${{ matrix.ocaml-compiler }}
+        uses: ocaml/setup-ocaml@v2
+        with:
+          ocaml-compiler: ${{ matrix.ocaml-compiler }}
+          opam-depext: false
+
+      - name: Install dune
+        run: |
+          opam install dune
+          opam install dune-configurator
+        shell: bash
+
+      - name: Install library
+        run: |
+          opam exec -- dune build
+          opam exec -- dune install
+        shell: bash
+
+      - name: Run testsuite
+        run: |
+          opam exec -- dune runtest
+        shell: bash
