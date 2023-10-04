@@ -22,6 +22,7 @@
  (depends
   (ocaml (>= : 5.0.0))
    dune
+  (multicont (>= : 1.0.1))
   (ounit2 :with-test)
   (qcheck :with-test))
  (tags
