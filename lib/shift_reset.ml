@@ -19,8 +19,9 @@ let reset : 'a. ('a Prompt.t -> 'a) -> 'a
   let p = Prompt.make () in
   Prompt.push p (fun () -> f p)
 
-let dollar0 : 'a 'b. ('a Prompt.t -> 'a) -> ('a -> 'b) -> 'b
+let dollar0 : 'a 'b. ('b Prompt.t -> 'a) -> ('a -> 'b) -> 'b
   = fun f g ->
-  let p = Prompt.make () in
-  g (f p)
+  reset (fun p ->
+      let ans = f p in
+      shift0 p (fun _ -> g ans))
 
