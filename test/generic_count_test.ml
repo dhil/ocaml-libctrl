@@ -108,11 +108,26 @@ module Reflection_count = struct
                   if f (fun _ -> choose [true; false]) then 1 else 0))
 end
 
+module Shift_reset_count = struct
+  let name = "shift/reset count"
+
+  let count f =
+    let open Libctrl.Shift_reset in
+    reset (fun p ->
+        if f (fun _ ->
+               shift p (fun k ->
+                   let tt = resume k true in
+                   let ff = resume k false in
+                   tt + ff))
+        then 1 else 0)
+end
+
 let counters : (module GENERIC_COUNT) list =
   [ (module Handlers_count)
   ; (module Callcc_count)
   ; (module Amb_count)
-  ; (module Reflection_count) ]
+  ; (module Reflection_count)
+  ; (module Shift_reset_count) ]
 
 let bxor x y =
   (x || y) && not (x && y)
