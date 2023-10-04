@@ -33,7 +33,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          opam install ./libctrl.opam --only-deps --with-test -y
+          opam install ./libctrl.opam --deps-only --with-test -y
         shell: bash
 
       - name: Install library
