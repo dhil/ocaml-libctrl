@@ -1,5 +1,6 @@
 (tests
- (names amb_test
+ (names c_test
+        amb_test
         callcc_test
         generic_count_test
         monadic_reflection_test
