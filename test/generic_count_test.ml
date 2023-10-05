@@ -122,6 +122,52 @@ module Shift_reset_count = struct
         then 1 else 0)
 end
 
+module Shift0_dollar0_count = struct
+  let name = "shift0/dollar0 count"
+
+  let count f =
+    let open Libctrl.Shift_reset in
+    dollar0
+      (fun p ->
+        f (fun _ ->
+            shift0 p (fun k ->
+                let tt = resume k true in
+                let ff = resume k false in
+                tt + ff)))
+      (fun ans -> if ans then 1 else 0)
+end
+
+module Shift_reset_mono_count = struct
+  let name = "shift/reset mono count"
+
+  type u = Bool of bool
+         | Int of int
+
+  let as_bool = function
+    | Bool b -> b
+    | _ -> assert false
+
+  let as_int = function
+    | Int i -> i
+    | _ -> assert false
+
+  let count f =
+    let module SR = Libctrl.Shift_reset.Make(struct type t = u end) in
+    let open SR in
+    as_int
+      (reset (fun () ->
+           let ans = f (fun _ ->
+                         let ans = shift (fun k ->
+                                       let tt = resume k (Bool true) in
+                                       let ff = resume k (Bool false) in
+                                       Int (as_int tt + as_int ff))
+                         in
+                         as_bool ans)
+           in
+           Int (if ans then 1 else 0)))
+
+end
+
 module Control_prompt_count = struct
   let name = "control/prompt count"
 
@@ -159,6 +205,8 @@ let counters : (module GENERIC_COUNT) list =
   ; (module Amb_count)
   ; (module Reflection_count)
   ; (module Shift_reset_count)
+  ; (module Shift0_dollar0_count)
+  ; (module Shift_reset_mono_count)
   ; (module Control_prompt_count) ]
 
 let bxor x y =
