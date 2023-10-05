@@ -150,7 +150,7 @@ module Control_prompt_count = struct
                          in
                          as_bool ans)
            in
-           if ans then Int 1 else Int 0))
+           Int (if ans then 1 else 0)))
 end
 
 let counters : (module GENERIC_COUNT) list =
