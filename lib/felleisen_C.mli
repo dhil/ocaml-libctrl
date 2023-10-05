@@ -4,7 +4,7 @@ module type C = sig
   type ans
   type 'a continuation
 
-  val resume : ans continuation -> ans -> ans
+  val throw : ans continuation -> ans -> 'b
   val c : (ans continuation -> ans) -> ans
   val prompt : (unit -> ans) -> ans
 end

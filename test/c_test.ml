@@ -3,7 +3,7 @@ let c_ex0 () =
   let open C in
   prompt (fun () ->
       40 + (c (fun k ->
-                resume k 2 + resume k 2)))
+                throw k 2 + throw k 2)))
 
 let test_c_ex0 _ = OUnit2.assert_equal 42 (c_ex0 ())
 

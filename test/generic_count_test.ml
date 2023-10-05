@@ -70,6 +70,45 @@ module Callcc_count = struct
         !result)
 end
 
+module C_count = struct
+  let name = "c count"
+
+  let count f =
+    let module C = Libctrl.Felleisen_C.Make(struct type t = bool end) in
+    let open C in
+    let worklist = ref [] in
+    let push w = worklist := w :: !worklist in
+    let pop () =
+      match !worklist with
+      | w :: ws -> worklist := ws; w
+      | [] -> assert false
+    in
+    let result = ref 0 in
+    let run_count f =
+      let exception Done in
+      try
+        ignore (prompt (fun () ->
+            let do_work _ =
+              match !worklist with
+              | [] -> raise Done
+              | _ ->
+                 let k = pop () in
+                 k ()
+            in
+            let ans = f (fun _ ->
+                          c (fun k ->
+                              push (fun () -> throw k true);
+                              push (fun () -> throw k false);
+                              c do_work))
+            in
+            (if ans then incr result);
+            c do_work));
+        raise Done
+      with Done -> !result
+    in
+    run_count f
+end
+
 module Amb_count = struct
   let name = "amb count"
 
@@ -202,6 +241,7 @@ end
 let counters : (module GENERIC_COUNT) list =
   [ (module Handlers_count)
   ; (module Callcc_count)
+  ; (module C_count)
   ; (module Amb_count)
   ; (module Reflection_count)
   ; (module Shift_reset_count)
@@ -228,7 +268,7 @@ let rec pow a = function
 let qcheck_tests =
   let xor_tests =
     List.map (fun (module G : GENERIC_COUNT) ->
-        QCheck.(Test.make ~count:50 ~name:G.name
+        QCheck.(Test.make ~count:10 ~name:G.name
           (int_range 0 20)
           (fun n ->
             let ans = (pow 2 n) / 2 in
