@@ -122,12 +122,44 @@ module Shift_reset_count = struct
         then 1 else 0)
 end
 
+module Control_prompt_count = struct
+  let name = "control/prompt count"
+
+  type u = Bool of bool
+         | Int of int
+
+  let as_bool = function
+    | Bool b -> b
+    | _ -> assert false
+
+  let as_int = function
+    | Int i -> i
+    | _ -> assert false
+
+  module CP = Libctrl.Control_prompt.Make(struct type t = u end)
+
+  let count f =
+    let open CP in
+    as_int
+      (prompt (fun () ->
+           let ans = f (fun _ ->
+                         let ans = control (fun k ->
+                                       let tt = prompt (fun () -> resume k (Bool true)) in
+                                       let ff = prompt (fun () -> resume k (Bool false)) in
+                                       Int (as_int tt + as_int ff))
+                         in
+                         as_bool ans)
+           in
+           if ans then Int 1 else Int 0))
+end
+
 let counters : (module GENERIC_COUNT) list =
   [ (module Handlers_count)
   ; (module Callcc_count)
   ; (module Amb_count)
   ; (module Reflection_count)
-  ; (module Shift_reset_count) ]
+  ; (module Shift_reset_count)
+  ; (module Control_prompt_count) ]
 
 let bxor x y =
   (x || y) && not (x && y)

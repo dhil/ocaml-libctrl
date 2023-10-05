@@ -14,6 +14,7 @@ control operators:
 * Filinski's monadic reflection for any monad.
 * Kiselyov's interface for programming with typed multi-prompt continuations.
 * Danvy and Filinski's `shift` and `reset` (and some of their variations).
+* Felleisen's `control` and `prompt`.
 
 <hr />
 
