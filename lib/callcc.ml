@@ -48,13 +48,13 @@ let call1cc : ('a continuation -> 'a) -> 'a
 
 (* [hprompt] generates a fresh prompt for delimiting invocations
      of [callcc]. *)
-let rec hprompt : 'a. ('a, 'a) Effect.Deep.handler =
+let rec hprompt (type b) : (b, b) Effect.Deep.handler =
     { Effect.Deep.retc = (fun ans -> ans)
     ; Effect.Deep.exnc = raise
     ; Effect.Deep.effc = (fun (type a) (eff : a Effect.t) ->
       match eff with
       | Callcc f ->
-         Some (fun (k : (a, _) Effect.Deep.continuation) ->
+         Some (fun (k : (a, b) Effect.Deep.continuation) ->
              let open Multicont.Deep in
              let r = promote k in
              (* We model the abortive elimination of continuations
@@ -66,10 +66,9 @@ let rec hprompt : 'a. ('a, 'a) Effect.Deep.handler =
                 we are only guaranteed to return to this prompt as
                 long as [Throw] doesn't pass through a non-forwarding
                 catch-all handler. *)
-             let exception Throw of a in
-             let exception Done of a in
+             let exception Throw of a * (a, b) Multicont.Deep.resumption in
              let cont : a continuation
-               = { resume = fun x -> raise (Throw x) }
+               = { resume = fun x -> raise (Throw (x, r)) }
              in
              (* The effect handler-captured continuation [r] is
                 captured abortively, thus to implement the semantics
@@ -80,21 +79,21 @@ let rec hprompt : 'a. ('a, 'a) Effect.Deep.handler =
                 Note: we must reinstate [handle_throw] in the
                 exception clause in order to handle any residual
                 invocations of [throw] in the continuation.  *)
-             let rec handle_throw r f =
+             let rec handle_throw f =
                try
                  (* we install a fresh prompt here to handle residual
                     applications of [callcc] in the continuation.
 
                     Note things are set up such that [Throw] will
                     propagate outside the prompt. *)
-                 prompt f
+                 f ()
                with
-               | Throw ans -> handle_throw r (fun () -> resume r ans)
-               | Done ans -> resume r ans
+               | Throw (ans, r) -> handle_throw (fun () -> resume r ans)
              in
-             handle_throw r (fun () ->
-                 let ans = f cont in
-                 raise (Done ans)))
+             handle_throw (fun () ->
+                 prompt (fun () ->
+                     let ans = f cont in
+                     throw cont ans)))
       | Call1cc f ->
          Some (fun (k : (a, _) Effect.Deep.continuation) ->
              let exception Throw of a in
@@ -112,5 +111,5 @@ let rec hprompt : 'a. ('a, 'a) Effect.Deep.handler =
              with
              | Throw ans -> Effect.Deep.continue k ans)
       | _ -> None) }
-and prompt : (unit -> 'a) -> 'a
+and prompt : 'a. (unit -> 'a) -> 'a
   = fun f -> Effect.Deep.match_with f () hprompt

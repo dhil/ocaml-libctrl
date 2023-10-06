@@ -76,29 +76,26 @@ module C_count = struct
   let count f =
     let module C = Libctrl.Felleisen_C.Make(struct type t = bool end) in
     let open C in
+    let exception Done in
     let worklist = ref [] in
     let push w = worklist := w :: !worklist in
     let pop () =
       match !worklist with
+      | [] -> raise Done
       | w :: ws -> worklist := ws; w
-      | [] -> assert false
     in
-    let result = ref 0 in
+    let result = Sys.opaque_identity (ref 0) in
     let run_count f =
-      let exception Done in
       try
         ignore (prompt (fun () ->
             let do_work _ =
-              match !worklist with
-              | [] -> raise Done
-              | _ ->
-                 let k = pop () in
-                 k ()
+              let k = pop () in
+              k ()
             in
             let ans = f (fun _ ->
                           c (fun k ->
-                              push (fun () -> throw k true);
                               push (fun () -> throw k false);
+                              push (fun () -> throw k true);
                               c do_work))
             in
             (if ans then incr result);

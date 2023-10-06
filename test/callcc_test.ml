@@ -27,6 +27,16 @@ let callcc_ex2 callcc =
 let test_callcc_ex2  _ = OUnit2.assert_equal (callcc_ex2 callcc)  69
 let test_call1cc_ex2 _ = OUnit2.assert_equal (callcc_ex2 call1cc) 69
 
+let callcc_ex3 () =
+  prompt (fun () ->
+      let r = ref None in
+      let x = callcc (fun k -> r := Some k; true) in
+      if x
+      then (ignore (throw (Option.get !r) false); 0)
+      else 42)
+
+let test_callcc_ex3 _ = OUnit2.assert_equal (callcc_ex3 ()) 42
+
 (* A roundabout way of computing factorial numbers *)
 let callcc_fac callcc n =
   prompt (fun () ->
@@ -100,6 +110,7 @@ let ounit2_tests =
     ; "call1cc_ex1" >:: test_call1cc_ex1
     ; "callcc_ex2" >:: test_callcc_ex2
     ; "call1cc_ex2" >:: test_call1cc_ex2
+    ; "callcc_ex3" >:: test_callcc_ex3
     ; "callcc_fac" >:: test_callcc_fac
     ; "call1cc_fac_1" >:: test_call1cc_fac_1
     ; "call1cc_fac_2" >:: test_call1cc_fac_2 ]
