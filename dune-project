@@ -3,6 +3,7 @@
 (name libctrl)
 
 (generate_opam_files true)
+(implicit_transitive_deps false)
 
 (source
  (github dhil/ocaml-libctrl))
