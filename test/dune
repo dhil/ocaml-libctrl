@@ -5,5 +5,5 @@
         generic_count_test
         monadic_reflection_test
         shift_control_test)
- (libraries libctrl
-            ounit2 qcheck))
+ (libraries libctrl multicont
+            ounit2 qcheck qcheck-core qcheck-ounit))
