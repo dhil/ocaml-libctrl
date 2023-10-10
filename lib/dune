@@ -1,4 +1,3 @@
 (library
  (public_name libctrl)
- (name libctrl)
  (libraries multicont))
